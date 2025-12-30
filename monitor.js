@@ -76,17 +76,28 @@ async function checkPrices(sendResult = false) {
     }
   });
 
+  // DEBUG: Сохраняем HTML в файл для проверки
+  const fs = require("fs");
+  fs.writeFileSync("debug.html", data);
+  console.log(`📄 HTML сохранен в debug.html (${data.length} символов)`);
+
   const $ = cheerio.load(data);
   const prices = [];
 
-  $(".tc-price.text-nowrap.tc-buyer-sum").each((i, el) => {
+  // DEBUG: Проверяем что вообще есть на странице
+  console.log(`🔎 Проверка селектора .tc-price.text-nowrap.tc-buyer-sum`);
+  const elements = $(".tc-price.text-nowrap.tc-buyer-sum");
+  console.log(`  Найдено элементов: ${elements.length}`);
+
+  elements.each((i, el) => {
     const text = $(el).text().trim();
+    console.log(`  Элемент ${i}: "${text}"`);
     // Извлекаем число (может быть целое или с копейками: 100 или 1031.80)
     const match = text.match(/(\d+(?:\.\d+)?)/);
     if (match) {
       const price = parseFloat(match[1]);
       prices.push(price);
-      console.log(`  Найдена цена: ${price} ₽`);
+      console.log(`    ✓ Найдена цена: ${price} ₽`);
     }
   });
 
