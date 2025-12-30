@@ -6,8 +6,6 @@ const URL = process.env.MONITOR_URL;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
-const MIN_PRICE = 100;
-const MAX_PRICE = 200;
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5 минут
 
 // Проверка переменных окружения
@@ -20,6 +18,19 @@ if (!BOT_TOKEN || !CHAT_ID || !URL) {
 }
 
 let lastUpdateId = 0;
+
+// Хранилище настроек для каждого пользователя
+const userSettings = {};
+
+function getUserSettings(chatId) {
+  if (!userSettings[chatId]) {
+    userSettings[chatId] = {
+      minPrice: 100,
+      maxPrice: 200
+    };
+  }
+  return userSettings[chatId];
+}
 
 async function sendTelegram(text) {
   try {
@@ -51,14 +62,55 @@ async function getUpdates() {
     if (data.ok && data.result.length > 0) {
       for (const update of data.result) {
         lastUpdateId = update.update_id;
+        const chatId = update.message?.chat?.id;
+        const text = update.message?.text;
 
-        if (update.message?.text?.startsWith('/check')) {
-          console.log(`📩 Получена команда /check от ${update.message.chat.id}`);
+        if (!text || String(chatId) !== String(CHAT_ID)) continue;
 
-          if (String(update.message.chat.id) === String(CHAT_ID)) {
-            await sendTelegram("⏳ Запускаю внеочередную проверку...");
-            await checkPrices(true); // true = отправить результат в любом случае
+        // Команда /check
+        if (text.startsWith('/check')) {
+          console.log(`📩 Получена команда /check от ${chatId}`);
+          await sendTelegram("⏳ Запускаю внеочередную проверку...");
+          await checkPrices(chatId, true);
+        }
+
+        // Команда /setmin <цена>
+        else if (text.startsWith('/setmin ')) {
+          const price = parseFloat(text.replace('/setmin ', ''));
+          if (isNaN(price) || price < 0) {
+            await sendTelegram("❌ Неверный формат. Используй: /setmin 100");
+          } else {
+            const settings = getUserSettings(chatId);
+            settings.minPrice = price;
+            await sendTelegram(`✅ Минимальная цена установлена: ${price} ₽`);
+            console.log(`⚙️ Пользователь ${chatId} установил MIN_PRICE = ${price}`);
           }
+        }
+
+        // Команда /setmax <цена>
+        else if (text.startsWith('/setmax ')) {
+          const price = parseFloat(text.replace('/setmax ', ''));
+          if (isNaN(price) || price < 0) {
+            await sendTelegram("❌ Неверный формат. Используй: /setmax 200");
+          } else {
+            const settings = getUserSettings(chatId);
+            settings.maxPrice = price;
+            await sendTelegram(`✅ Максимальная цена установлена: ${price} ₽`);
+            console.log(`⚙️ Пользователь ${chatId} установил MAX_PRICE = ${price}`);
+          }
+        }
+
+        // Команда /settings
+        else if (text === '/settings') {
+          const settings = getUserSettings(chatId);
+          await sendTelegram(
+            `⚙️ Текущие настройки:\n\n` +
+            `💵 Диапазон цен: ${settings.minPrice}-${settings.maxPrice} ₽\n\n` +
+            `Команды:\n` +
+            `/setmin <цена> - установить минимальную цену\n` +
+            `/setmax <цена> - установить максимальную цену\n` +
+            `/check - внеочередная проверка`
+          );
         }
       }
     }
@@ -67,8 +119,11 @@ async function getUpdates() {
   }
 }
 
-async function checkPrices(sendResult = false) {
-  console.log(`🔍 Проверка цен... ${new Date().toLocaleString("ru-RU")}`);
+async function checkPrices(chatId = CHAT_ID, sendResult = false) {
+  const settings = getUserSettings(chatId);
+  const { minPrice, maxPrice } = settings;
+
+  console.log(`🔍 Проверка цен... ${new Date().toLocaleString("ru-RU")} (диапазон: ${minPrice}-${maxPrice}₽)`);
 
   const { data } = await axios.get(URL, {
     headers: {
@@ -82,52 +137,77 @@ async function checkPrices(sendResult = false) {
   console.log(`📄 HTML сохранен в debug.html (${data.length} символов)`);
 
   const $ = cheerio.load(data);
-  const prices = [];
+  const offers = [];
 
-  // DEBUG: Проверяем что вообще есть на странице
-  console.log(`🔎 Проверка селектора .tc-price`);
-  const elements = $(".tc-price");
-  console.log(`  Найдено элементов: ${elements.length}`);
+  // Ищем все предложения
+  console.log(`🔎 Поиск предложений...`);
+  const items = $(".tc-item");
+  console.log(`  Найдено элементов .tc-item: ${items.length}`);
 
-  elements.each((i, el) => {
-    const text = $(el).find("div").first().text().trim();
-    console.log(`  Элемент ${i}: "${text}"`);
-    // Убираем пробелы и извлекаем число (может быть "29 124 ₽" или "1031.80 ₽")
-    const cleanText = text.replace(/\s/g, '');
-    const match = cleanText.match(/(\d+(?:\.\d+)?)/);
-    if (match) {
-      const price = parseFloat(match[1]);
-      prices.push(price);
-      console.log(`    ✓ Найдена цена: ${price} ₽`);
-    }
+  items.each((i, item) => {
+    const $item = $(item);
+
+    // Парсим цену
+    const priceText = $item.find(".tc-price div").first().text().trim();
+    const cleanPrice = priceText.replace(/\s/g, '');
+    const priceMatch = cleanPrice.match(/(\d+(?:\.\d+)?)/);
+
+    if (!priceMatch) return;
+
+    const price = parseFloat(priceMatch[1]);
+
+    // Парсим продавца
+    const seller = $item.find(".media-user-name").text().trim() || "Неизвестно";
+
+    // Парсим ссылку
+    const link = $item.attr("href") || "";
+    const fullLink = link.startsWith("http") ? link : `https://funpay.com${link}`;
+
+    offers.push({ price, seller, link: fullLink });
+    console.log(`  [${i}] ${seller} - ${price}₽`);
   });
 
-  console.log(`💰 Найдено цен: ${prices.length}`);
+  console.log(`💰 Найдено предложений: ${offers.length}`);
 
-  for (const price of prices) {
-    if (price > MIN_PRICE && price < MAX_PRICE) {
+  // Ищем предложения в диапазоне
+  const inRange = offers.filter(o => o.price > minPrice && o.price < maxPrice);
+
+  // Если есть предложения в диапазоне - отправляем их
+  if (inRange.length > 0) {
+    for (const offer of inRange) {
       await sendTelegram(
-        `🔥 Найдено предложение!\n` +
-        `Цена: ${price} ₽\n` +
-        `${URL}`
+        `🔥 Найдено предложение!\n\n` +
+        `💰 Цена: ${offer.price} ₽\n` +
+        `👤 Продавец: ${offer.seller}\n` +
+        `🔗 ${offer.link}`
       );
-      return true;
     }
+    return true;
   }
 
-  // Если это ручная проверка, отправляем результат
+  // Если это ручная проверка и нет предложений в диапазоне
   if (sendResult) {
-    if (prices.length === 0) {
-      await sendTelegram("❌ Цены не найдены на странице");
+    if (offers.length === 0) {
+      await sendTelegram("❌ Предложения не найдены на странице");
     } else {
-      const pricesInRange = prices.filter(p => p > MIN_PRICE && p < MAX_PRICE);
-      if (pricesInRange.length === 0) {
-        await sendTelegram(
-          `✅ Проверка завершена\n` +
-          `💰 Найдено цен: ${prices.length}\n` +
-          `⚠️ Подходящих предложений (${MIN_PRICE}-${MAX_PRICE}₽) не найдено`
-        );
+      // Показываем 3 самые низкие цены выше MAX_PRICE
+      const aboveMax = offers
+        .filter(o => o.price > maxPrice)
+        .sort((a, b) => a.price - b.price)
+        .slice(0, 3);
+
+      let message = `✅ Проверка завершена\n\n` +
+        `💰 Найдено предложений: ${offers.length}\n` +
+        `⚠️ Подходящих (${minPrice}-${maxPrice}₽) не найдено\n`;
+
+      if (aboveMax.length > 0) {
+        message += `\n📊 3 самые низкие цены выше диапазона:\n\n`;
+        aboveMax.forEach((offer, i) => {
+          message += `${i + 1}. ${offer.price}₽ - ${offer.seller}\n${offer.link}\n\n`;
+        });
       }
+
+      await sendTelegram(message);
     }
   }
 
@@ -138,13 +218,24 @@ async function checkPrices(sendResult = false) {
   console.log("🚀 Запуск мониторинга...");
   console.log(`✅ URL: ${URL}`);
   console.log(`⏰ Интервал проверки: ${CHECK_INTERVAL / 60000} минут`);
-  console.log(`💵 Диапазон цен: ${MIN_PRICE}-${MAX_PRICE} ₽`);
 
-  await sendTelegram("🟢 Мониторинг запущен");
+  const defaultSettings = getUserSettings(CHAT_ID);
+  console.log(`💵 Диапазон цен по умолчанию: ${defaultSettings.minPrice}-${defaultSettings.maxPrice} ₽`);
+
+  await sendTelegram(
+    `🟢 Мониторинг запущен\n\n` +
+    `⚙️ Настройки:\n` +
+    `💵 Диапазон цен: ${defaultSettings.minPrice}-${defaultSettings.maxPrice} ₽\n\n` +
+    `Команды:\n` +
+    `/settings - показать настройки\n` +
+    `/setmin <цена> - установить минимальную цену\n` +
+    `/setmax <цена> - установить максимальную цену\n` +
+    `/check - внеочередная проверка`
+  );
 
   // Первая проверка сразу
   try {
-    await checkPrices();
+    await checkPrices(CHAT_ID);
   } catch (e) {
     console.error("❌ Ошибка при проверке:", e.message);
     await sendTelegram(`⚠️ Ошибка: ${e.message}`);
@@ -153,7 +244,7 @@ async function checkPrices(sendResult = false) {
   // Регулярные проверки
   setInterval(async () => {
     try {
-      await checkPrices();
+      await checkPrices(CHAT_ID);
     } catch (e) {
       console.error("❌ Ошибка при проверке:", e.message);
       await sendTelegram(`⚠️ Ошибка: ${e.message}`);
@@ -165,5 +256,5 @@ async function checkPrices(sendResult = false) {
     await getUpdates();
   }, 3000);
 
-  console.log("✅ Бот готов принимать команды. Отправь /check для внеочередной проверки");
+  console.log("✅ Бот готов принимать команды");
 })();
