@@ -211,8 +211,8 @@ async function checkPrices(chatId = CHAT_ID, sendResult = false) {
 
     const price = parseFloat(priceMatch[1]);
 
-    // Парсим продавца (ищем span внутри .media-user-name)
-    const seller = $item.find(".media-user-name span").text().trim() || "Неизвестно";
+    // Парсим продавца (ищем span.pseudo-a внутри .tc-user)
+    const seller = $item.find(".tc-user span.pseudo-a").first().text().trim() || "Неизвестно";
 
     // Проверяем, не в списке ли скамеров
     if (scammers.includes(seller)) {
