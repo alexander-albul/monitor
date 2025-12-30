@@ -85,15 +85,16 @@ async function checkPrices(sendResult = false) {
   const prices = [];
 
   // DEBUG: Проверяем что вообще есть на странице
-  console.log(`🔎 Проверка селектора .tc-price.text-nowrap.tc-buyer-sum`);
-  const elements = $(".tc-price.text-nowrap.tc-buyer-sum");
+  console.log(`🔎 Проверка селектора .tc-price`);
+  const elements = $(".tc-price");
   console.log(`  Найдено элементов: ${elements.length}`);
 
   elements.each((i, el) => {
-    const text = $(el).text().trim();
+    const text = $(el).find("div").first().text().trim();
     console.log(`  Элемент ${i}: "${text}"`);
-    // Извлекаем число (может быть целое или с копейками: 100 или 1031.80)
-    const match = text.match(/(\d+(?:\.\d+)?)/);
+    // Убираем пробелы и извлекаем число (может быть "29 124 ₽" или "1031.80 ₽")
+    const cleanText = text.replace(/\s/g, '');
+    const match = cleanText.match(/(\d+(?:\.\d+)?)/);
     if (match) {
       const price = parseFloat(match[1]);
       prices.push(price);
