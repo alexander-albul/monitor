@@ -1,8 +1,8 @@
+require("dotenv").config();
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-const URL = process.env.FUNPAY_URL || "https://funpay.com/lots/3734/";
-
+const URL = process.env.FUNPAY_URL;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
@@ -11,8 +11,11 @@ const MAX_PRICE = 200;
 const CHECK_INTERVAL = 5 * 60 * 1000; // 5 минут
 
 // Проверка переменных окружения
-if (!BOT_TOKEN || !CHAT_ID) {
-  console.error("❌ Не заданы BOT_TOKEN или CHAT_ID");
+if (!BOT_TOKEN || !CHAT_ID || !URL) {
+  console.error("❌ Не заданы обязательные переменные окружения:");
+  if (!BOT_TOKEN) console.error("  - BOT_TOKEN");
+  if (!CHAT_ID) console.error("  - CHAT_ID");
+  if (!URL) console.error("  - FUNPAY_URL");
   process.exit(1);
 }
 
