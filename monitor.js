@@ -79,12 +79,13 @@ async function checkPrices(sendResult = false) {
   const $ = cheerio.load(data);
   const prices = [];
 
-  $("body").text().split(/\s+/).forEach(word => {
-    const match = word.match(/(\d+)\s*₽/);
-    if (match) {
-      prices.push(Number(match[1]));
-    }
-  });
+  const text = $("body").text();
+  const regex = /(\d+)\s*₽/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    prices.push(Number(match[1]));
+  }
 
   console.log(`💰 Найдено цен: ${prices.length}`);
 
