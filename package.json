@@ -1,7 +1,7 @@
 {
-  "name": "funpay-monitor",
+  "name": "price-monitor",
   "version": "1.0.0",
-  "description": "FunPay price monitoring bot for Telegram",
+  "description": "Price monitoring bot for Telegram",
   "main": "monitor.js",
   "scripts": {
     "start": "node monitor.js"

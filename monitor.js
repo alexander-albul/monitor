@@ -2,7 +2,7 @@ require("dotenv").config();
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-const URL = process.env.FUNPAY_URL;
+const URL = process.env.MONITOR_URL;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
 
@@ -15,7 +15,7 @@ if (!BOT_TOKEN || !CHAT_ID || !URL) {
   console.error("❌ Не заданы обязательные переменные окружения:");
   if (!BOT_TOKEN) console.error("  - BOT_TOKEN");
   if (!CHAT_ID) console.error("  - CHAT_ID");
-  if (!URL) console.error("  - FUNPAY_URL");
+  if (!URL) console.error("  - MONITOR_URL");
   process.exit(1);
 }
 
@@ -68,12 +68,12 @@ async function checkPrices() {
 }
 
 (async () => {
-  console.log("🚀 Запуск FunPay мониторинга...");
+  console.log("🚀 Запуск мониторинга...");
   console.log(`✅ URL: ${URL}`);
   console.log(`⏰ Интервал проверки: ${CHECK_INTERVAL / 60000} минут`);
   console.log(`💵 Диапазон цен: ${MIN_PRICE}-${MAX_PRICE} ₽`);
-  
-  await sendTelegram("🟢 Мониторинг FunPay запущен");
+
+  await sendTelegram("🟢 Мониторинг запущен");
 
   // Первая проверка сразу
   try {
