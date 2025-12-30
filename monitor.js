@@ -26,7 +26,8 @@ function getUserSettings(chatId) {
   if (!userSettings[chatId]) {
     userSettings[chatId] = {
       minPrice: 100,
-      maxPrice: 200
+      maxPrice: 200,
+      scammers: ["berek65"] // Список скамеров
     };
   }
   return userSettings[chatId];
@@ -105,12 +106,65 @@ async function getUpdates() {
           const settings = getUserSettings(chatId);
           await sendTelegram(
             `⚙️ Текущие настройки:\n\n` +
-            `💵 Диапазон цен: ${settings.minPrice}-${settings.maxPrice} ₽\n\n` +
+            `💵 Диапазон цен: ${settings.minPrice}-${settings.maxPrice} ₽\n` +
+            `🚫 Скамеров в списке: ${settings.scammers.length}\n\n` +
             `Команды:\n` +
             `/setmin <цена> - установить минимальную цену\n` +
             `/setmax <цена> - установить максимальную цену\n` +
+            `/addscammer <ник> - добавить скамера\n` +
+            `/removescammer <ник> - удалить из списка\n` +
+            `/scammers - показать список скамеров\n` +
             `/check - внеочередная проверка`
           );
+        }
+
+        // Команда /addscammer <ник>
+        else if (text.startsWith('/addscammer ')) {
+          const nickname = text.replace('/addscammer ', '').trim();
+          if (!nickname) {
+            await sendTelegram("❌ Укажи ник. Используй: /addscammer berek65");
+          } else {
+            const settings = getUserSettings(chatId);
+            if (settings.scammers.includes(nickname)) {
+              await sendTelegram(`⚠️ ${nickname} уже в списке скамеров`);
+            } else {
+              settings.scammers.push(nickname);
+              await sendTelegram(`✅ ${nickname} добавлен в список скамеров`);
+              console.log(`🚫 Пользователь ${chatId} добавил скамера: ${nickname}`);
+            }
+          }
+        }
+
+        // Команда /removescammer <ник>
+        else if (text.startsWith('/removescammer ')) {
+          const nickname = text.replace('/removescammer ', '').trim();
+          if (!nickname) {
+            await sendTelegram("❌ Укажи ник. Используй: /removescammer berek65");
+          } else {
+            const settings = getUserSettings(chatId);
+            const index = settings.scammers.indexOf(nickname);
+            if (index === -1) {
+              await sendTelegram(`⚠️ ${nickname} не найден в списке`);
+            } else {
+              settings.scammers.splice(index, 1);
+              await sendTelegram(`✅ ${nickname} удален из списка скамеров`);
+              console.log(`✓ Пользователь ${chatId} удалил скамера: ${nickname}`);
+            }
+          }
+        }
+
+        // Команда /scammers
+        else if (text === '/scammers') {
+          const settings = getUserSettings(chatId);
+          if (settings.scammers.length === 0) {
+            await sendTelegram("📋 Список скамеров пуст");
+          } else {
+            let message = `🚫 Список скамеров (${settings.scammers.length}):\n\n`;
+            settings.scammers.forEach((nick, i) => {
+              message += `${i + 1}. ${nick}\n`;
+            });
+            await sendTelegram(message);
+          }
         }
       }
     }
@@ -121,9 +175,9 @@ async function getUpdates() {
 
 async function checkPrices(chatId = CHAT_ID, sendResult = false) {
   const settings = getUserSettings(chatId);
-  const { minPrice, maxPrice } = settings;
+  const { minPrice, maxPrice, scammers } = settings;
 
-  console.log(`🔍 Проверка цен... ${new Date().toLocaleString("ru-RU")} (диапазон: ${minPrice}-${maxPrice}₽)`);
+  console.log(`🔍 Проверка цен... ${new Date().toLocaleString("ru-RU")} (диапазон: ${minPrice}-${maxPrice}₽, скамеров: ${scammers.length})`);
 
   const { data } = await axios.get(URL, {
     headers: {
@@ -138,6 +192,7 @@ async function checkPrices(chatId = CHAT_ID, sendResult = false) {
 
   const $ = cheerio.load(data);
   const offers = [];
+  let scammerCount = 0;
 
   // Ищем все предложения
   console.log(`🔎 Поиск предложений...`);
@@ -156,8 +211,15 @@ async function checkPrices(chatId = CHAT_ID, sendResult = false) {
 
     const price = parseFloat(priceMatch[1]);
 
-    // Парсим продавца
-    const seller = $item.find(".media-user-name").text().trim() || "Неизвестно";
+    // Парсим продавца (ищем span внутри .media-user-name)
+    const seller = $item.find(".media-user-name span").text().trim() || "Неизвестно";
+
+    // Проверяем, не в списке ли скамеров
+    if (scammers.includes(seller)) {
+      scammerCount++;
+      console.log(`  [${i}] 🚫 СКИП (скамер): ${seller} - ${price}₽`);
+      return; // Пропускаем это предложение
+    }
 
     // Парсим ссылку
     const link = $item.attr("href") || "";
@@ -167,7 +229,7 @@ async function checkPrices(chatId = CHAT_ID, sendResult = false) {
     console.log(`  [${i}] ${seller} - ${price}₽`);
   });
 
-  console.log(`💰 Найдено предложений: ${offers.length}`);
+  console.log(`💰 Найдено предложений: ${offers.length} (отфильтровано скамеров: ${scammerCount})`);
 
   // Ищем предложения в диапазоне
   const inRange = offers.filter(o => o.price > minPrice && o.price < maxPrice);
@@ -221,15 +283,19 @@ async function checkPrices(chatId = CHAT_ID, sendResult = false) {
 
   const defaultSettings = getUserSettings(CHAT_ID);
   console.log(`💵 Диапазон цен по умолчанию: ${defaultSettings.minPrice}-${defaultSettings.maxPrice} ₽`);
+  console.log(`🚫 Скамеров в фильтре: ${defaultSettings.scammers.length}`);
 
   await sendTelegram(
     `🟢 Мониторинг запущен\n\n` +
     `⚙️ Настройки:\n` +
-    `💵 Диапазон цен: ${defaultSettings.minPrice}-${defaultSettings.maxPrice} ₽\n\n` +
+    `💵 Диапазон цен: ${defaultSettings.minPrice}-${defaultSettings.maxPrice} ₽\n` +
+    `🚫 Скамеров в фильтре: ${defaultSettings.scammers.length}\n\n` +
     `Команды:\n` +
     `/settings - показать настройки\n` +
     `/setmin <цена> - установить минимальную цену\n` +
     `/setmax <цена> - установить максимальную цену\n` +
+    `/addscammer <ник> - добавить скамера\n` +
+    `/scammers - список скамеров\n` +
     `/check - внеочередная проверка`
   );
 
