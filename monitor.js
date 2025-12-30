@@ -57,7 +57,7 @@ async function getUpdates() {
 
           if (String(update.message.chat.id) === String(CHAT_ID)) {
             await sendTelegram("⏳ Запускаю внеочередную проверку...");
-            await checkPrices();
+            await checkPrices(true); // true = отправить результат в любом случае
           }
         }
       }
@@ -67,9 +67,9 @@ async function getUpdates() {
   }
 }
 
-async function checkPrices() {
+async function checkPrices(sendResult = false) {
   console.log(`🔍 Проверка цен... ${new Date().toLocaleString("ru-RU")}`);
-  
+
   const { data } = await axios.get(URL, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -95,9 +95,27 @@ async function checkPrices() {
         `Цена: ${price} ₽\n` +
         `${URL}`
       );
-      return;
+      return true;
     }
   }
+
+  // Если это ручная проверка, отправляем результат
+  if (sendResult) {
+    if (prices.length === 0) {
+      await sendTelegram("❌ Цены не найдены на странице");
+    } else {
+      const pricesInRange = prices.filter(p => p > MIN_PRICE && p < MAX_PRICE);
+      if (pricesInRange.length === 0) {
+        await sendTelegram(
+          `✅ Проверка завершена\n` +
+          `💰 Найдено цен: ${prices.length}\n` +
+          `⚠️ Подходящих предложений (${MIN_PRICE}-${MAX_PRICE}₽) не найдено`
+        );
+      }
+    }
+  }
+
+  return false;
 }
 
 (async () => {
