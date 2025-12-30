@@ -81,9 +81,12 @@ async function checkPrices(sendResult = false) {
 
   $(".tc-price.text-nowrap.tc-buyer-sum").each((i, el) => {
     const text = $(el).text().trim();
+    // Извлекаем число (может быть целое или с копейками: 100 или 1031.80)
     const match = text.match(/(\d+(?:\.\d+)?)/);
     if (match) {
-      prices.push(parseFloat(match[1]));
+      const price = parseFloat(match[1]);
+      prices.push(price);
+      console.log(`  Найдена цена: ${price} ₽`);
     }
   });
 
