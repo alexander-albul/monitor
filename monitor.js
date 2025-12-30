@@ -19,6 +19,8 @@ if (!BOT_TOKEN || !CHAT_ID || !URL) {
   process.exit(1);
 }
 
+let lastUpdateId = 0;
+
 async function sendTelegram(text) {
   try {
     await axios.post(
@@ -31,6 +33,37 @@ async function sendTelegram(text) {
     console.log(`📤 Отправлено: ${text}`);
   } catch (error) {
     console.error("❌ Ошибка отправки в Telegram:", error.message);
+  }
+}
+
+async function getUpdates() {
+  try {
+    const { data } = await axios.get(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getUpdates`,
+      {
+        params: {
+          offset: lastUpdateId + 1,
+          timeout: 10
+        }
+      }
+    );
+
+    if (data.ok && data.result.length > 0) {
+      for (const update of data.result) {
+        lastUpdateId = update.update_id;
+
+        if (update.message?.text?.startsWith('/check')) {
+          console.log(`📩 Получена команда /check от ${update.message.chat.id}`);
+
+          if (String(update.message.chat.id) === String(CHAT_ID)) {
+            await sendTelegram("⏳ Запускаю внеочередную проверку...");
+            await checkPrices();
+          }
+        }
+      }
+    }
+  } catch (error) {
+    // Игнорируем ошибки long polling
   }
 }
 
@@ -92,4 +125,11 @@ async function checkPrices() {
       await sendTelegram(`⚠️ Ошибка: ${e.message}`);
     }
   }, CHECK_INTERVAL);
+
+  // Проверка команд от пользователя каждые 3 секунды
+  setInterval(async () => {
+    await getUpdates();
+  }, 3000);
+
+  console.log("✅ Бот готов принимать команды. Отправь /check для внеочередной проверки");
 })();
